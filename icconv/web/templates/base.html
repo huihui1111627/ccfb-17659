@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}隐式转换分析{% endblock %}</title>
+<style>
+  :root {
+    --bg: #f5f7fa; --card: #fff; --line: #e4e8ee; --text: #1f2933;
+    --muted: #697586; --primary: #2563eb; --red: #dc2626; --amber: #d97706;
+    --green: #16a34a; --red-bg: #fef2f2; --amber-bg: #fffbeb; --green-bg: #f0fdf4;
+    --blue-bg: #eff6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--text); font-size: 14px; }
+  header { background: #111827; color:#fff; padding: 14px 28px; display:flex;
+           align-items:center; gap:24px; }
+  header h1 { font-size: 18px; margin:0; font-weight:600; }
+  header nav a { color:#cbd5e1; text-decoration:none; margin-right:18px; font-size:14px; }
+  header nav a:hover, header nav a.active { color:#fff; }
+  main { max-width: 1180px; margin: 24px auto; padding: 0 20px; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:20px; margin-bottom:20px; }
+  textarea { width:100%; min-height:96px; font-family: Menlo, Consolas, monospace;
+             font-size:13.5px; border:1px solid var(--line); border-radius:8px;
+             padding:12px; resize:vertical; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:8px;
+           padding:10px 22px; font-size:14px; cursor:pointer; }
+  button:hover { background:#1d4ed8; }
+  button.ghost { background:#fff; color:var(--text); border:1px solid var(--line); }
+  .examples button { margin: 4px 6px 4px 0; padding:6px 12px; font-size:12.5px;
+                     background:var(--blue-bg); color:var(--primary); }
+  h2 { font-size:16px; margin:0 0 14px; }
+  h3 { font-size:14px; margin:18px 0 8px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--line);
+           vertical-align:top; }
+  th { color:var(--muted); font-weight:600; background:#fafbfc; }
+  code, .mono { font-family: Menlo, Consolas, monospace; }
+  .tag { display:inline-block; padding:2px 9px; border-radius:20px; font-size:12px;
+         white-space:nowrap; }
+  .tag.red { background:var(--red-bg); color:var(--red); }
+  .tag.amber { background:var(--amber-bg); color:var(--amber); }
+  .tag.green { background:var(--green-bg); color:var(--green); }
+  .tag.blue { background:var(--blue-bg); color:var(--primary); }
+  .tag.gray { background:#f1f3f5; color:var(--muted); }
+  .step { background:#f8fafc; border-left:3px solid var(--primary); padding:8px 12px;
+          margin:6px 0; border-radius:0 6px 6px 0; font-size:12.5px; }
+  .step.blocked { border-left-color:var(--red); background:var(--red-bg); }
+  .plan { font-family: Menlo, monospace; font-size:12.5px; white-space:pre;
+          background:#0f172a; color:#cbd5e1; padding:14px; border-radius:8px;
+          overflow-x:auto; line-height:1.7; }
+  .risk { color:var(--amber); font-size:12.5px; margin:4px 0; }
+  .warn { color:var(--red); font-size:12.5px; margin:4px 0; }
+  .muted { color:var(--muted); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .metric { display:inline-block; margin-right:24px; }
+  .metric b { font-size:20px; }
+  .ddl { background:#0f172a; color:#a7f3d0; padding:10px; border-radius:8px;
+         font-family:Menlo,monospace; font-size:12.5px; white-space:pre-wrap; }
+  .badge-ok { color:var(--green); } .badge-bad { color:var(--red); }
+  .severity-critical { color:var(--red); font-weight:700; }
+  .severity-warning { color:var(--amber); font-weight:700; }
+  .severity-info { color:var(--muted); font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>隐式类型转换分析平台</h1>
+  <nav>
+    <a href="/" class="{% block nav_query %}{% endblock %}">查询分析</a>
+    <a href="/schema" class="{% block nav_schema %}{% endblock %}">表结构评审</a>
+  </nav>
+</header>
+<main>
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

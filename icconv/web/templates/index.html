@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}查询转换分析{% endblock %}
+{% block nav_query %}active{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>输入查询语句</h2>
+  <textarea id="sql" placeholder="SELECT * FROM orders WHERE user_id = 7"></textarea>
+  <div style="margin-top:12px;">
+    <button onclick="analyze()">分析并执行</button>
+    <span class="muted" style="margin-left:12px;">语句会在模拟库真实执行，对比执行计划与耗时</span>
+  </div>
+  <h3>试试这些语句</h3>
+  <div class="examples">
+    <button onclick="fill('SELECT * FROM orders WHERE user_id = 7')">字符串列=数字（索引失效）</button>
+    <button onclick="fill(&quot;SELECT * FROM users WHERE id = '7'&quot;)">数字列=字符串常量（常量转换）</button>
+    <button onclick="fill('SELECT u.name, o.total_amount FROM users u JOIN orders o ON o.user_id = u.id WHERE u.id = 7')">字符串/整数连接</button>
+    <button onclick="fill(&quot;SELECT id, name FROM users WHERE phone = 13800001234&quot;)">手机号当数字传</button>
+    <button onclick="fill(&quot;SELECT * FROM orders WHERE user_id = '000123' COLLATE utf8mb4_general_ci&quot;)">排序规则冲突</button>
+    <button onclick="fill(&quot;SELECT id FROM orders WHERE created_at BETWEEN '2025-03-01 00:00:00' AND '2025-03-31 23:59:59'&quot;)">日期列与字符串</button>
+  </div>
+</div>
+
+<div id="error" class="card" style="display:none;border-color:var(--red);"></div>
+<div id="result" style="display:none;">
+  <div class="card">
+    <h2>总览</h2>
+    <div>
+      <span class="metric">结果行数 <b id="m-rows">0</b></span>
+      <span class="metric">耗时(ms) <b id="m-ms">0</b></span>
+      <span class="metric">隐式转换 <b id="m-conv">-</b></span>
+      <span class="metric">索引受阻 <b id="m-block">-</b></span>
+      <span class="metric">实际风险 <b id="m-risk">-</b></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>执行计划</h2>
+    <div class="plan" id="plan"></div>
+  </div>
+  <div class="card">
+    <h2>每个条件的转换分析</h2>
+    <div id="conditions"></div>
+  </div>
+  <div class="card">
+    <h2>改写建议（已在模拟库逐行验证等价性）</h2>
+    <div id="suggestions"></div>
+  </div>
+</div>
+
+<script>
+function fill(s){ document.getElementById('sql').value = s; }
+
+function esc(s){ return String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function analyze(){
+  const sql = document.getElementById('sql').value.trim();
+  if(!sql) return;
+  document.getElementById('error').style.display='none';
+  fetch('/api/analyze', {method:'POST', headers:{'Content-Type':'application/json'},
+                         body: JSON.stringify({sql})})
+    .then(r => r.json())
+    .then(d => {
+      if(d.error){ showError(d.error); return; }
+      render(d);
+    }).catch(e => showError(e));
+}
+
+function showError(msg){
+  const el = document.getElementById('error');
+  el.style.display='block'; el.textContent = '错误：' + msg;
+  document.getElementById('result').style.display='none';
+}
+
+function accessTag(a){
+  if(a==='index_seek') return '<span class="tag green">索引定位</span>';
+  if(a==='seq_scan_blocked_by_coercion') return '<span class="tag red">全表扫描·被转换挡住</span>';
+  return '<span class="tag gray">全表扫描·无索引</span>';
+}
+
+function renderPlan(node, depth){
+  const pad = '  '.repeat(depth);
+  const head = `${pad}${node.kind} [${node.table}] ${node.detail}`;
+  const stat = `  检查 ${node.rows_examined} 行 / 返回 ${node.rows_returned} 行 / ${node.elapsed_ms}ms`;
+  let out = head + '\n' + pad + stat + (node.blocked_by ? `  ⚠ ${node.blocked_by}` : '') + '\n';
+  for(const c of node.children || []) out += renderPlan(c, depth+1);
+  return out;
+}
+
+function render(d){
+  document.getElementById('result').style.display='block';
+  const r = d.report;
+  document.getElementById('m-rows').textContent = r.result_rows;
+  document.getElementById('m-ms').textContent = r.elapsed_ms;
+  document.getElementById('m-conv').textContent = r.has_implicit_conversion ? '是' : '否';
+  document.getElementById('m-block').innerHTML = r.has_index_block
+      ? '<span class="tag red">是</span>' : '<span class="tag green">否</span>';
+  document.getElementById('m-risk').innerHTML = r.has_correctness_risk
+      ? '<span class="tag red">有实际告警</span>'
+      : (r.has_potential_risk ? '<span class="tag amber">有潜在风险</span>' : '<span class="tag green">无</span>');
+  document.getElementById('plan').textContent = renderPlan(r.plan, 0);
+
+  // 条件
+  let ch = '';
+  for(const c of r.conditions){
+    ch += `<div style="border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <code style="font-size:13.5px;">${esc(c.text)}</code>
+        ${accessTag(c.access)}
+      </div>
+      <p class="muted" style="margin:8px 0;">${esc(c.rule_text)}</p>`;
+    for(const s of c.conversions || []){
+      ch += `<div class="step ${s.index_blocked?'blocked':''}">
+        ${s.on_column?'<b>列侧</b>':'常量/表达式侧'}转换：${esc(s.operand)}
+        <code>${esc(s.from_type)}</code> → <code>${esc(s.to_type)}</code>
+        ${s.index_blocked?'<b class="badge-bad"> · 索引失效</b>':' · 索引可用'}
+      </div>`;
+    }
+    for(const risk of c.risks || []) ch += `<div class="risk">⚠ 潜在风险：${esc(risk)}</div>`;
+    for(const w of c.runtime_warnings || []){
+      ch += `<div class="warn">✗ 实际告警（${w.count} 次）：${esc(w.message)}</div>`;
+      for(const smp of (w.samples||[]).slice(0,2)) ch += `<div class="warn" style="margin-left:14px;">样例：${esc(JSON.stringify(smp))}</div>`;
+    }
+    ch += `</div>`;
+  }
+  document.getElementById('conditions').innerHTML = ch || '<p class="muted">无条件</p>';
+
+  // 改写建议
+  let sh = '';
+  if(!d.suggestions || !d.suggestions.length){
+    sh = '<p class="muted">该语句无需改写，或不存在隐式转换。</p>';
+  }
+  for(const s of d.suggestions || []){
+    sh += `<div style="border:1px solid var(--line);border-radius:8px;padding:14px;margin-bottom:12px;">
+      <p><b>${esc(s.approach==='sql_rewrite'?'语句改写':'列定义修改(DDL)')}</b> — ${esc(s.note||'')}</p>`;
+    if(s.rewritten_sql){
+      const eq = s.equivalent;
+      sh += `<p>改写后：<code>${esc(s.rewritten_sql)}</code></p>
+        <p>逐行等价验证：${eq===true?'<span class="tag green">完全一致，可上线</span>'
+            : eq===false?'<span class="tag red">结果不一致，禁止上线</span>':'<span class="tag gray">未验证</span>'}</p>`;
+      if(s.diff_detail) sh += `<div class="warn">差异：${esc(JSON.stringify(s.diff_detail))}</div>`;
+    }
+    if(s.ddl){
+      sh += `<p>建议 DDL（无损检查：${s.ddl_lossless?'<span class="badge-ok">通过</span>':'<span class="badge-bad">存在阻碍</span>'}）：</p>
+        <div class="ddl">${esc(s.ddl)}</div>`;
+      for(const b of s.ddl_blockers || []) sh += `<div class="warn">阻碍：${esc(b)}</div>`;
+    }
+    sh += `</div>`;
+  }
+  document.getElementById('suggestions').innerHTML = sh;
+}
+</script>
+{% endblock %}

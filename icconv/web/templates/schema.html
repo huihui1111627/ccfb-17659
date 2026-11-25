@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}表结构评审{% endblock %}
+{% block nav_schema %}active{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>全库列类型 / 字符集不一致清单（{{ issues|length }} 项）</h2>
+  <p class="muted">在表结构评审阶段提前发现同名同义列的类型族、精度、字符集、排序规则、长度不一致，
+     以及"日期存成字符串"等设计问题，避免上线后在连接和查询中触发隐式转换。</p>
+  <table>
+    <thead><tr><th style="width:90px;">级别</th><th style="width:200px;">问题类型</th>
+      <th>说明</th><th style="width:34%;">涉及列</th><th>建议</th></tr></thead>
+    <tbody>
+    {% for i in issues %}
+      <tr>
+        <td class="severity-{{ i.severity }}">
+          {% if i.severity == 'critical' %}严重
+          {% elif i.severity == 'warning' %}警告{% else %}提示{% endif %}
+        </td>
+        <td><code>{{ i.category }}</code></td>
+        <td>{{ i.title }}<br><span class="muted">{{ i.detail }}</span></td>
+        <td>{% for c in i.columns %}<span class="tag blue" style="margin:2px;">{{ c }}</span>{% endfor %}</td>
+        <td>{{ i.suggestion }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
